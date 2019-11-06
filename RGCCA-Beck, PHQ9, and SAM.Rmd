@@ -1,0 +1,548 @@
+```{r Clear Workspace}
+#Clear Workspace----
+rm(list = ls())
+```
+---
+title: "RGCCA"
+author: "Theodore Wiebold"
+date: "October 22, 2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+#devtools::install_github("herveabdi/PTCA4CATA") # you only need this line of code if you haven't downloaded the #package
+#install.packages("gridExtra")
+#install.packages("ggplotify")
+#install.packages("grid")
+library(devtools)
+library(ExPosition)
+library(corrplot)
+library(ggplot2)
+library(PTCA4CATA)
+#devtools::install_github('HerveAbdi/data4PCCAR')
+library(data4PCCAR)
+library(tidyverse)
+
+# The following three functions allow you to arrange your plots in Rmarkdown
+library(gridExtra)
+library(ggplotify)
+library(grid)
+library(gplots)
+
+#install.packages('TExPosition')
+#install.packages('ggplot2')
+#install.packages('GGally')
+#install.packages('CCA')
+#install.packages('TInPosition')
+
+library('TExPosition')
+library('ggplot2')
+library('GGally')
+library('CCA')
+library('TInPosition')
+
+#install.packages("RGCCA")
+library(RGCCA)
+```
+
+#Data Cleaning----
+```{r}
+#Data Cleaning----
+
+#Import data----
+PHQ9 <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/PHQ9.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+Beck <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/BAI.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+SAM <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/SAM.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+Demographics <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/Demographics.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+
+PHQ9 <- PHQ9[,c(-11,-12)] #removes life question and if they continued
+Beck <- Beck[,-1] #removes id
+SAM <- SAM[,-1] #removed id
+Demographics <- Demographics[, -c(1:5, 7:12, 20)] #removes test taking information
+
+AllParticipants <- cbind2(PHQ9,Beck)
+AllParticipants <- cbind2(AllParticipants, Demographics)
+AllParticipants <- cbind2(AllParticipants, SAM)
+rawAllParticipants <- nrow(AllParticipants) #shows number of observations from raw dataset
+
+#Remove rows with missing data----
+#PHQ9 <- na.omit(PHQ9) #omits rows with no values
+#naomitPHQ9 <- nrow(PHQ9) #shows number of observations from naomit data
+#naomitPHQ9 <- rawPHQ9 - naomitPHQ9 #shows number of observations removed 
+#Beck <- na.omit(Beck) #omits rows with no values
+#naomitBeck <- nrow(Beck) #shows number of observations from naomit data
+#naomitBeck <- rawBeck - naomitBeck #shows number of observations removed 
+
+AllParticipants <- na.omit(AllParticipants) #omits rows with no values
+naomitAllParticipants <- nrow(AllParticipants) #shows number of observations from naomit data
+naomitAllParticipants <- rawAllParticipants - naomitAllParticipants #shows number of observations removed
+
+#Remove duplicates PHQ9----
+#n_occurWithDuplicatesPHQ9 <- data.frame(table(PHQ9$id)) #gives a dataframe of how many times each id occured in the data
+#NumberOfDubplicatesPHQ9 <- sum(n_occurWithDuplicatesPHQ9$Freq-1) #gives the number of duplicates
+ #for (i in 1:NumberOfDubplicatesPHQ9) { #for-loop removing duplicates
+ #i <- anyDuplicated(PHQ9$id)
+ #PHQ9 <- PHQ9[-i,]
+  # }
+#n_occurNoDuplicatesPHQ9 <- data.frame(table(PHQ9$id))  #shows there are no duplicates reamining
+
+#Remove duplicates Beck----
+#n_occurWithDuplicatesBeck <- data.frame(table(Beck$id)) #gives a dataframe of how many times each id occured in the data
+#NumberOfDubplicatesBeck <- sum(n_occurWithDuplicatesBeck$Freq-1) #gives the number of duplicates
+ #for (j in 1:NumberOfDubplicatesBeck) { #for-loop removing duplicates
+ #j <- anyDuplicated(Beck$id)
+ #Beck <- Beck[-j,]
+  # }
+#n_occurNoDuplicatesBeck <- data.frame(table(Beck$id))  #shows there are no duplicates reamining
+
+#Remove duplicates AllParticipants----
+n_occurWithDuplicatesAll <- data.frame(table(AllParticipants$id)) #gives a dataframe of how many times each id occured in the data
+NumberOfDubplicatesAll <- sum(n_occurWithDuplicatesAll$Freq-1) #gives the number of duplicates
+ for (j in 1:NumberOfDubplicatesAll) { #for-loop removing duplicates
+ j <- anyDuplicated(AllParticipants$id)
+ AllParticipants <- AllParticipants[-j,]
+   }
+n_occurNoDuplicatesAll <- data.frame(table(AllParticipants$id))  #shows there are no duplicates reamining
+
+#Remove columns and rows with string identifiers----
+#AllParticipants <- AllParticipants[,-12] #Removes second id column
+#AllParticipants <- AllParticipants[c(-1,-2),] #removes row of questions and import id
+
+#Convert character to numeric in all columns----
+AllParticipants[ , c(1:ncol(AllParticipants))] <- apply(AllParticipants[ , c(1:ncol(AllParticipants))], 2, function(x) as.numeric(as.character(x)))
+
+PHQ9 <- AllParticipants[,2:10]
+Beck <- AllParticipants[,11:31]
+Demographics <- AllParticipants[,32:47]
+SAM <- AllParticipants[,48:73]
+SAMEpisodic <- SAM[,1:8]
+SAMSemantic <- SAM[,9:14]
+SAMSpatial <- SAM[,15:20]
+SAMFuture <- SAM[,21:26]
+```
+
+## Create groups of PHQ9 and Beck
+
+```{r}
+#Make key words as each variable representing each question in PHQ9----
+colnames(PHQ9) <- c('Pleasure','Hopeless','Sleep','Energy','Appetite','Failure','Focus','Speed','Suicide')
+rownames(PHQ9) <-c(1:nrow(PHQ9))
+
+#Make key words as each variable representing each question in Beck----
+colnames(Beck) <- c('Numbness','Hot','Wobbly','Tense','Fear','Dizzy','Heart','Unsteady','Terrified','Nervous', 'Choking', 'Trembling', 'Shaky', 'Control', 'Breathing', 'Dying', 'Scared', 'Indigestion', 'Faint', 'Flushed', 'Sweats')
+rownames(Beck) <-c(1:nrow(Beck))
+
+#Make key words as each variable representing each question in SAMEpisodic----
+colnames(SAMEpisodic) <- c("Specific", "Order", "Object", "Wearing", "Confidence", "Many", "Day", "People")
+rownames(SAMEpisodic) <-c(1:nrow(SAMEpisodic))
+
+
+#Convert character to numeric in all columns----
+PHQ9[ , c(1:ncol(PHQ9))] <- apply(PHQ9[ , c(1:ncol(PHQ9))], 2, function(x) as.numeric(as.character(x)))
+
+Beck[ , c(1:ncol(Beck))] <- apply(Beck[ , c(1:ncol(Beck))], 2, function(x) as.numeric(as.character(x)))
+
+SAMEpisodic[ , c(1:ncol(SAMEpisodic))] <- apply(SAMEpisodic[ , c(1:ncol(SAMEpisodic))], 2, function(x) as.numeric(as.character(x)))
+
+#Creat grouping based on Depression Severity----
+ColumnsPHQ9 <- length(PHQ9)
+totalscorePHQ9 <- rowSums(PHQ9[,1:ColumnsPHQ9]) 
+for (i in 1:length(totalscorePHQ9)){
+severity <- totalscorePHQ9[i]
+  if (severity <= 4){
+  totalscorePHQ9[i] <- 1 #Minimal depression
+  }
+  if (severity > 4 & severity <= 9){
+  totalscorePHQ9[i] <- 2 #Mild depression
+  }
+  if (severity > 9 & severity <= 14){
+  totalscorePHQ9[i] <- 3 #Moderate depression
+  }
+  if (severity > 14 & severity <= 19){
+  totalscorePHQ9[i] <- 4 #Moderately severe depression
+  }
+  if (severity >19){
+  totalscorePHQ9[i] <- 5 #Severe depression
+  }
+}
+
+#Creat grouping based on Anxiety Severity----
+ColumnsBeck <- length(Beck)
+totalscoreBeck <- rowSums(Beck[,1:ColumnsBeck]) 
+for (i in 1:length(totalscoreBeck)){
+severityAnxiety <- totalscoreBeck[i]
+  if (severityAnxiety <= 21){
+  totalscoreBeck[i] <- 1 #Low Anxiety
+  }
+  if (severityAnxiety > 21 & severityAnxiety <= 35){
+  totalscoreBeck[i] <- 2 #Moderate Anxiety
+  }
+  if (severityAnxiety > 35){
+  totalscoreBeck[i] <- 3 #Concerning levels of Anxiety
+  }
+}
+
+#Reverse code questions 1 and 2
+for (b in 1:2) {
+  SAMEpisodic[,b] <- (max(SAMEpisodic) +1 ) - SAMEpisodic[,b]
+}
+
+```
+
+## Data set: PHQ 
+It measures the 9 different beers (rows) on 30 beer characteristics (columns).
+
+```{r data_set}
+head(Beck, n = 6L)
+head(PHQ9, n = 6L)
+head(SAM, n = 6L)
+head(Demographics, n = 6L)
+```
+
+#Covariance and Correlation Plots
+```{r}
+#Beck----
+cov.plot.dataBeck <-cov(Beck)
+diag(cov.plot.dataBeck) <- 1
+cov.plot.numBeck <- corrplot(cov.plot.dataBeck, method = "number", type = "upper", tl.pos = "lt",
+                        tl.cex = .7, tl.srt = 45, addCoefasPercent = TRUE, number.cex = .7)
+cov.plot.fullBeck <- corrplot(cov.plot.dataBeck, method = "ellipse", type = "lower", add = TRUE,
+                          diag = FALSE, tl.pos = "n", cl.pos = "n")
+#PHQ9----
+cov.plot.dataPHQ9 <-cov(PHQ9)
+diag(cov.plot.dataPHQ9) <- 1
+cov.plot.numPHQ9 <- corrplot(cov.plot.dataPHQ9, method = "number", type = "upper", tl.pos = "lt",
+                        tl.cex = .7, tl.srt = 45, addCoefasPercent = TRUE)
+cov.plot.fullPHQ9 <- corrplot(cov.plot.dataPHQ9, method = "ellipse", type = "lower", add = TRUE,
+                          diag = FALSE, tl.pos = "n", cl.pos = "n")
+
+#SAM----
+cor.plot.dataSAM <-cor(SAMEpisodic)
+#diag(cor.plot.dataSAM) <- 1
+cor.plot.numSAM <- corrplot(cor.plot.dataSAM, method = "number", type = "upper", tl.pos = "lt",
+                        tl.cex = .7, tl.srt = 45, addCoefasPercent = TRUE)
+cor.plot.fullSAM <- corrplot(cor.plot.dataSAM, method = "ellipse", type = "lower", add = TRUE,
+                          diag = FALSE, tl.pos = "n", cl.pos = "n")
+
+#Diagonals are all ones because some of the variances were above 1 and corrplot does not except values outside [-1,1]
+#CREDIT GOES TO SHELIA!!!
+
+#Covariance of PHQ9 and Beck
+cov.plot.dataBoth <-cov(PHQ9, Beck)
+#diag(cov.plot.dataPHQ9) <- 1
+cov.plot.numBoth <- corrplot(cov.plot.dataBoth, method = "number", type = "full", tl.pos = "lt", number.cex = 1, tl.cex = .9, tl.srt = 45, addCoefasPercent = TRUE)
+#cor.plot.fullBoth <- corrplot(cor.plot.dataBoth, method = "ellipse", type = "lower", add = TRUE,
+                          #diag = FALSE, tl.pos = "n", cl.pos = "n")
+
+#Correlation between PHQ9 and SAM
+cor.plot.dataPS <-cor(PHQ9, SAMEpisodic)
+cor.plot.numPS <- corrplot(cor.plot.dataPS, method = "number", type = "full", tl.pos = "lt", number.cex = 1, tl.cex = .9, tl.srt = 45, addCoefasPercent = TRUE)
+
+#Correlation between Beck and SAM
+cor.plot.dataBS <-cor(Beck, SAMEpisodic)
+cor.plot.numBS <- corrplot(cor.plot.dataBS, method = "number", type = "full", tl.pos = "lt", number.cex = 1, tl.cex = .9, tl.srt = 45, addCoefasPercent = TRUE)
+```
+
+# Analysis
+```{r}
+resPCAinferencePHQ9 <- epPCA.inference.battery(PHQ9, scale = FALSE, DESIGN = totalscorePHQ9, graphs = FALSE)
+
+resPCAinferenceBeck <- epPCA.inference.battery(Beck, scale = FALSE, DESIGN = totalscoreBeck, graphs = FALSE)
+
+resPCAinferenceSAMEpisodic <- epPCA.inference.battery(SAMEpisodic, scale = FALSE, graphs = FALSE)
+
+Blocks <- list(PHQ9, Beck, SAMEpisodic)
+ComponentsFixed <- matrix(c(4,4,1), 1, 3)
+ComponentsExplore <- matrix(c(2,2,2), 1, 3)
+C <- 1-diag(3)
+
+resRGCCA <- rgcca(Blocks, C, tau = "optimal", ncomp = ComponentsExplore,  scheme = "horst", scale = TRUE) 
+resRGCCA$tau
+#tau = shrinkage parameter e.g. choice between [0,1] where 0 = correlation and 1 = covariance
+#scheme = horst or g(x) = x makes objective function convex with this inner-weighting scheme i.e. how the blocks are weighted
+#C = relationship between all blocks [0,1] where 0 means they are not connect and 1 means they are e.g. in this design all blocks are connected
+
+```
+
+#Screeplots
+```{r}
+scree.PHQ9 <- PlotScree(ev = resRGCCA$AVE$AVE_X[[1]],
+               plotKaiser = TRUE,
+               title = "PHQ9 Explained Average Explained Variance per Dimension")
+
+scree.Beck <- PlotScree(ev = resRGCCA$AVE$AVE_X[[2]],
+               plotKaiser = TRUE,
+               title = "Beck Explained Average Explained Variance per Dimension")
+
+scree.SAMEpisodic <- PlotScree(ev = resRGCCA$AVE$AVE_X[[3]],
+               plotKaiser = TRUE,
+               title = "SAM Episodic Average Explained Variance per Dimension")
+```
+
+#Correlation Plots
+```{r}
+#devtools::install_github("kassambara/ggpubr")
+library("ggpubr")
+
+#PHQ9 and Beck correlation of Row Factor Scores of comp 1
+PHQ9Beck <- cbind(data.frame(resRGCCA$Y[[1]][,1]), data.frame(resRGCCA$Y[[2]][,1]))
+colnames(PHQ9Beck) <- c("PHQ9","Beck")
+
+PHQ9BeckScatter <- ggscatter(PHQ9Beck, x = "PHQ9", y = "Beck", 
+          add = "reg.line", conf.int = TRUE, color = 'mediumorchid4',
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "PHQ9 Row Factor Scores Comp 1", ylab = "Beck Row Factor Scores Comp 1")
+PHQ9BeckScatter
+
+#PHQ9 and SAM Episodic correlation of Row Factor Scores of comp 1
+PHQ9SAMEpisodic <- cbind(data.frame(resRGCCA$Y[[1]][,1]), data.frame(resRGCCA$Y[[3]][,1]))
+colnames(PHQ9SAMEpisodic) <- c("PHQ9","SAMEpisodic")
+
+PHQ9SAMEpisodicScatter <- ggscatter(PHQ9SAMEpisodic, x = "PHQ9", y = "SAMEpisodic", 
+          add = "reg.line", conf.int = TRUE, color = 'mediumorchid4',
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "PHQ9 Row Factor Scores Comp 1", ylab = "SAMEpisodic Row Factor Scores Comp 1")
+PHQ9SAMEpisodicScatter
+
+#Beck and SAM Episodic correlation of Row Factor Scores of comp 1
+BeckSAMEpisodic <- cbind(data.frame(resRGCCA$Y[[2]][,1]), data.frame(resRGCCA$Y[[3]][,1]))
+colnames(BeckSAMEpisodic) <- c("Beck","SAMEpisodic")
+
+BeckSAMEpisodicScatter <- ggscatter(BeckSAMEpisodic, x = "Beck", y = "SAMEpisodic", 
+          add = "reg.line", conf.int = TRUE, color = 'mediumorchid4',
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Beck Row Factor Scores Comp 1", ylab = "SAMEpisodic Row Factor Scores Comp 1")
+BeckSAMEpisodicScatter
+```
+#Factor Scores
+```{r}
+data.frame(colnames(resRGCCA$Y[[1]]) <- c('V1','V2'))
+#PHQ9
+my.fi.plotPHQ9 <- createFactorMap(resRGCCA$Y[[1]], # data
+                            title = "PHQ9 Factor Scores", # title of the plot
+                            axis1 = 1, axis2 = 2, # which component for x and y axes
+                            pch = 19, # the shape of the dots (google `pch`)
+                            cex = 2, # the size of the dots
+                            display.labels = FALSE,
+                            text.cex = 2.5, # the size of the text
+                            alpha.points = 0.1,
+                            col.points = resPCAinferencePHQ9$Fixed.Data$Plotting.Data$fi.col, # color of the dots
+                            col.labels = resPCAinferencePHQ9$Fixed.Data$Plotting.Data$fi.col, # color for labels of dots
+                            )
+
+VariancePHQ9 <- data.frame(resRGCCA$AVE$AVE_X[[1]])
+fi.labelsPHQ9 <- createxyLabels.gen(1,2,
+                                    lambda = 0,
+                             tau = t(round(VariancePHQ9*100, digits = 2)), #Average explained variance
+                             axisName = "Component "
+                             )
+fi.plotPHQ9 <- my.fi.plotPHQ9$zeMap + fi.labelsPHQ9 # you need this line to be able to save them in the end
+
+# get colors
+grp.indPHQ9 <- order(totalscorePHQ9)[!duplicated(sort(totalscorePHQ9))]
+grp.colPHQ9 <- resPCAinferencePHQ9$Fixed.Data$Plotting.Data$fi.col[grp.indPHQ9] # get the color
+grp.namePHQ9 <- totalscorePHQ9[grp.indPHQ9] # get the corresponding groups
+names(grp.colPHQ9) <- grp.namePHQ9
+# make group means
+group.meanPHQ9 <- aggregate(resRGCCA$Y[[1]],
+                     by = list(totalscorePHQ9), # must be a list
+                     mean)
+# need to format the results from `aggregate` correctly
+rownames(group.meanPHQ9) <- group.meanPHQ9[,1] # Use the first column as row names
+fi.meanPHQ9 <- group.meanPHQ9[,-1] # Exclude the first column
+fi.mean.plotPHQ9 <- createFactorMap(fi.meanPHQ9,
+                                alpha.points = 1,
+                                alpha.labels = 1,
+                                col.points = grp.colPHQ9[rownames(fi.meanPHQ9)],
+                                col.labels = grp.colPHQ9[rownames(fi.meanPHQ9)],
+                                pch = 17,
+                                cex = 3,
+                                text.cex = 3)
+fi.WithMeanPHQ9 <- my.fi.plotPHQ9$zeMap_background + my.fi.plotPHQ9$zeMap_dots + fi.mean.plotPHQ9$zeMap_dots + fi.mean.plotPHQ9$zeMap_text + fi.labelsPHQ9
+fi.WithMeanPHQ9
+
+# Depend on the size of your data, this might take a while
+#fi.bootPHQ9 <- Boot4Mean(resRGCCA$Y[[1]],
+                     #design = totalscorePHQ9,
+                     #niter = 1000)
+
+# Check other parameters you can change for this function
+#bootCI4meanPHQ9 <- MakeCIEllipses(fi.bootPHQ9$BootCube[,c(1:2),], # get the first two components
+                              #col = grp.colPHQ9[rownames(fi.meanPHQ9)])
+
+#fi.WithMeanCIPHQ9 <- my.fi.plotPHQ9$zeMap_background + bootCI4meanPHQ9 + my.fi.plotPHQ9$zeMap_dots + #fi.mean.plotPHQ9$zeMap_dots + fi.mean.plotPHQ9$zeMap_text + fi.labelsPHQ9
+#fi.WithMeanCIPHQ9
+######################################################################################################
+#Beck
+my.fi.plotBeck <- createFactorMap(resRGCCA$Y[[2]], # data
+                            title = "Beck Factor Scores", # title of the plot
+                            axis1 = 1, axis2 = 2, # which component for x and y axes
+                            pch = 19, # the shape of the dots (google `pch`)
+                            cex = 2, # the size of the dots
+                            display.labels = FALSE,
+                            text.cex = 2.5, # the size of the text
+                            alpha.points = 0.1,
+                            col.points = resPCAinferenceBeck$Fixed.Data$Plotting.Data$fi.col, # color of the dots
+                            col.labels = resPCAinferenceBeck$Fixed.Data$Plotting.Data$fi.col, # color for labels of dots
+                            )
+
+VarianceBeck <- data.frame(resRGCCA$AVE$AVE_X[[2]])
+fi.labelsBeck <- createxyLabels.gen(1,2,
+                                    lambda = 0,
+                             tau = t(round(VarianceBeck*100, digits = 2)), #average explained variance
+                             axisName = "Component "
+                             )
+fi.plotBeck <- my.fi.plotBeck$zeMap + fi.labelsBeck # you need this line to be able to save them in the end
+
+# get colors
+grp.indBeck <- order(totalscoreBeck)[!duplicated(sort(totalscoreBeck))]
+grp.colBeck <- resPCAinferenceBeck$Fixed.Data$Plotting.Data$fi.col[grp.indBeck] # get the color
+grp.nameBeck <- totalscoreBeck[grp.indBeck] # get the corresponding groups
+names(grp.colBeck) <- grp.nameBeck
+# make group means
+group.meanBeck <- aggregate(resRGCCA$Y[[2]],
+                     by = list(totalscoreBeck), # must be a list
+                     mean)
+# need to format the results from `aggregate` correctly
+rownames(group.meanBeck) <- group.meanBeck[,1] # Use the first column as row names
+fi.meanBeck <- group.meanBeck[,-1] # Exclude the first column
+fi.mean.plotBeck <- createFactorMap(fi.meanBeck,
+                                alpha.points = 1,
+                                alpha.labels = 1,
+                                col.points = grp.colBeck[rownames(fi.meanBeck)],
+                                col.labels = grp.colBeck[rownames(fi.meanBeck)],
+                                pch = 17,
+                                cex = 3,
+                                text.cex = 3)
+fi.WithMeanBeck <- my.fi.plotBeck$zeMap_background + my.fi.plotBeck$zeMap_dots + fi.mean.plotBeck$zeMap_dots + fi.mean.plotBeck$zeMap_text + fi.labelsBeck
+fi.WithMeanBeck
+
+#resRGCCA.plot2 <- createFactorMap(resRGCCA$Y[[2]], display.labels = FALSE)
+#resRGCCA.plot2 <- resRGCCA.plot2$zeMap + resRGCCA.plot2$zeMap_dots
+#resRGCCA.plot2
+######################################################################################################
+#SAM Episodic
+my.fi.plotSAM <- createFactorMap(resRGCCA$Y[[3]], # data
+                            title = "SAM Episodic Factor Scores", # title of the plot
+                            axis1 = 1, axis2 = 2, # which component for x and y axes
+                            pch = 19, # the shape of the dots (google `pch`)
+                            cex = 2, # the size of the dots
+                            display.labels = FALSE,
+                            text.cex = 2.5, # the size of the text
+                            alpha.points = 0.1,
+                            col.points = resPCAinferenceSAMEpisodic$Fixed.Data$Plotting.Data$fi.col, # color of the dots
+                            col.labels = resPCAinferenceSAMEpisodic$Fixed.Data$Plotting.Data$fi.col, # color for labels of dots
+                            )
+
+VarianceSAM <- data.frame(resRGCCA$AVE$AVE_X[[3]])
+fi.labelsSAM <- createxyLabels.gen(1,2,
+                                    lambda = 0,
+                             tau = t(round(VarianceSAM*100, digits = 2)),
+                             axisName = "Component "
+                             )
+fi.plotSAM <- my.fi.plotSAM$zeMap + fi.labelsSAM # you need this line to be able to save them in the end
+fi.plotSAM
+
+#resRGCCA.plot3 <- createFactorMap(resRGCCA$Y[[3]], display.labels = FALSE)
+#resRGCCA.plot3 <- resRGCCA.plot3$zeMap + resRGCCA.plot3$zeMap_dots
+#resRGCCA.plot3
+```
+
+
+#Loadings
+```{r}
+colorsPHQ9 <- prettyGraphsColorSelection(n.colors = nrow(resRGCCA$astar[[1]]))
+#PHQ9
+my.load.plotPHQ9 <- createFactorMap(resRGCCA$astar[[1]], # data
+                            title = "PHQ9 Loadings", # title of the plot
+                            axis1 = 1, axis2 = 2, # which component for x and y axes
+                            pch = 19, # the shape of the dots (google `pch`)
+                            cex = 2, # the size of the dots
+                            display.labels = TRUE,
+                            text.cex = 2.5, # the size of the text
+                            alpha.points = 0.3,
+                            col.points = colorsPHQ9, # color of the dots
+                            col.labels = colorsPHQ9, # color for labels of dots
+                            )
+
+VariancePHQ9 <- data.frame(resRGCCA$AVE$AVE_X[[1]])
+load.labelsPHQ9 <- createxyLabels.gen(1,2,
+                                    lambda = 0,
+                             tau = t(round(VariancePHQ9*100, digits = 2)),
+                             axisName = "Component "
+                             )
+load.plotPHQ9 <- my.load.plotPHQ9$zeMap + load.labelsPHQ9 # you need this line to be able to save them in the end
+load.plotPHQ9
+
+#resRGCCA.plot1 <- createFactorMap(resRGCCA$astar[[1]], display.labels = TRUE)
+#resRGCCA.plot1 <- resRGCCA.plot1$zeMap + resRGCCA.plot1$zeMap_dots
+#resRGCCA.plot1
+######################################################################################################
+colorsBeck <- prettyGraphsColorSelection(n.colors = nrow(resRGCCA$astar[[2]]))
+#Beck
+my.load.plotBeck <- createFactorMap(resRGCCA$astar[[2]], # data
+                            title = "Beck Loadings", # title of the plot
+                            axis1 = 1, axis2 = 2, # which component for x and y axes
+                            pch = 19, # the shape of the dots (google `pch`)
+                            cex = 2, # the size of the dots
+                            display.labels = TRUE,
+                            text.cex = 2.5, # the size of the text
+                            alpha.points = 0.3,
+                            col.points = colorsBeck, # color of the dots
+                            col.labels = colorsBeck, # color for labels of dots
+                            )
+
+VarianceBeck <- data.frame(resRGCCA$AVE$AVE_X[[2]])
+load.labelsBeck <- createxyLabels.gen(1,2,
+                                    lambda = 0,
+                             tau = t(round(VarianceBeck*100, digits = 2)),
+                             axisName = "Component "
+                             )
+load.plotBeck <- my.load.plotBeck$zeMap + load.labelsBeck # you need this line to be able to save them in the end
+load.plotBeck
+
+#resRGCCA.plot2 <- createFactorMap(resRGCCA$astar[[2]], display.labels = TRUE)
+#resRGCCA.plot2 <- resRGCCA.plot2$zeMap + resRGCCA.plot2$zeMap_dots
+#resRGCCA.plot2
+######################################################################################################
+colorsSAM <- prettyGraphsColorSelection(n.colors = nrow(resRGCCA$astar[[3]]))
+#SAM Episodic
+my.load.plotSAM <- createFactorMap(resRGCCA$astar[[3]], # data
+                            title = "SAM Episodic Loadings", # title of the plot
+                            axis1 = 1, axis2 = 2, # which component for x and y axes
+                            pch = 19, # the shape of the dots (google `pch`)
+                            cex = 2, # the size of the dots
+                            display.labels = TRUE,
+                            text.cex = 2.5, # the size of the text
+                            alpha.points = 0.3,
+                            col.points = colorsSAM, # color of the dots
+                            col.labels = colorsSAM, # color for labels of dots
+                            )
+
+VarianceSAM <- data.frame(resRGCCA$AVE$AVE_X[[3]])
+load.labelsSAM <- createxyLabels.gen(1,2,
+                                    lambda = 0,
+                             tau = t(round(VarianceSAM*100, digits = 2)),
+                             axisName = "Component "
+                             )
+load.plotSAM <- my.load.plotSAM$zeMap + load.labelsSAM # you need this line to be able to save them in the end
+load.plotSAM
+
+
+#resRGCCA.plot3 <- createFactorMap(resRGCCA$astar[[3]], display.labels = TRUE)
+#resRGCCA.plot3 <- resRGCCA.plot3$zeMap + resRGCCA.plot3$zeMap_dots
+#resRGCCA.plot3
+```
+
+#Average Explained Variance of the Model and Blocks
+```{r}
+resRGCCA$AVE$AVE_outer_model #average variance explained by design
+
+resRGCCA$AVE$AVE_inner_model #average variacne explained by each block 
+```
+
+
+
+

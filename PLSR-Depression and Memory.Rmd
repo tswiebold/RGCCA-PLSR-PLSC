@@ -1,0 +1,551 @@
+```{r Clear Workspace}
+#Clear Workspace----
+rm(list = ls())
+```
+---
+title: "PLSR"
+author: "Theodore Wiebold"
+date: "October 30, 2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+#devtools::install_github("herveabdi/PTCA4CATA") # you only need this line of code if you haven't downloaded the #package
+#install.packages("gridExtra")
+#install.packages("ggplotify")
+#install.packages("grid")
+library(devtools)
+library(ExPosition)
+library(corrplot)
+library(ggplot2)
+library(PTCA4CATA)
+
+# The following three functions allow you to arrange your plots in Rmarkdown
+library(gridExtra)
+library(ggplotify)
+library(grid)
+
+#install.packages('TExPosition')
+#install.packages('ggplot2')
+#install.packages('GGally')
+#install.packages('CCA')
+#install.packages('TInPosition')
+
+library(InPosition)
+# use the last version of PTCA
+#devtools::install_github('HerveAbdi/PTCA4CATA')
+#install.packages('gplots')
+library(gplots)
+#also install data4PCCAR last version
+#devtools::install_github('HerveAbdi/data4PCCAR')
+library(data4PCCAR)
+library(tidyverse)
+
+library('TExPosition')
+library('ggplot2')
+library('GGally')
+library('CCA')
+library('TInPosition')
+```
+
+#Data Cleaning----
+```{r}
+#Import data----
+#Training Data-----
+PHQ9 <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/PHQ9.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+Beck <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/BAI.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+SAM <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/SAM.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+Demographics <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/Demographics.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+
+#Testing Data----
+TestData <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/Raw Data _Fall10.28.19.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+TestData <- TestData[(nrow(PHQ9) +1):nrow(TestData),]
+
+
+PHQ9 <- PHQ9[,c(-11,-12)] #removes life question and if they continued
+Beck <- Beck[,-1] #removes id
+SAM <- SAM[,-1] #removed id
+Demographics <- Demographics[, -c(1:5, 7:12, 20)] #removes test taking information
+DemographicsTest <- TestData[,c(1:20)]
+TestData <- TestData[,-c(1:20)] #removes demographic questions
+PHQ9Test <- TestData[,c(1:9)]
+TestData <- TestData[,-c(1:15)] #removes PHQ9
+BeckTest <- TestData[,c(1:10, (ncol(TestData)-10):ncol(TestData))]
+TestData <- TestData[,-c(1:10)]
+SAMTest <- TestData[, c(34:59)]
+
+#Training Set
+AllParticipants <- cbind2(PHQ9,Beck)
+AllParticipants <- cbind2(AllParticipants, Demographics)
+AllParticipants <- cbind2(AllParticipants, SAM)
+rawAllParticipants <- nrow(AllParticipants) #shows number of observations from raw dataset
+
+#Test Set
+AllParticipantsTest <- cbind2(PHQ9Test,BeckTest)
+AllParticipantsTest <- cbind2(AllParticipantsTest, DemographicsTest)
+AllParticipantsTest <- cbind2(AllParticipantsTest, SAMTest)
+rawAllParticipantsTest <- nrow(AllParticipantsTest) #shows number of observations from raw dataset
+
+#Remove rows with missing data----
+#PHQ9 <- na.omit(PHQ9) #omits rows with no values
+#naomitPHQ9 <- nrow(PHQ9) #shows number of observations from naomit data
+#naomitPHQ9 <- rawPHQ9 - naomitPHQ9 #shows number of observations removed 
+#Beck <- na.omit(Beck) #omits rows with no values
+#naomitBeck <- nrow(Beck) #shows number of observations from naomit data
+#naomitBeck <- rawBeck - naomitBeck #shows number of observations removed 
+
+#Training Data
+AllParticipants <- na.omit(AllParticipants) #omits rows with no values
+naomitAllParticipants <- nrow(AllParticipants) #shows number of observations from naomit data
+naomitAllParticipants <- rawAllParticipants - naomitAllParticipants #shows number of observations removed
+
+#Testing Data
+AllParticipantsTest <- na.omit(AllParticipantsTest) #omits rows with no values
+naomitAllParticipantsTest <- nrow(AllParticipantsTest) #shows number of observations from naomit data
+naomitAllParticipantsTest <- rawAllParticipantsTest - naomitAllParticipantsTest #shows number of observations removed
+
+#Remove duplicates PHQ9----
+#n_occurWithDuplicatesPHQ9 <- data.frame(table(PHQ9$id)) #gives a dataframe of how many times each id occured in the data
+#NumberOfDubplicatesPHQ9 <- sum(n_occurWithDuplicatesPHQ9$Freq-1) #gives the number of duplicates
+ #for (i in 1:NumberOfDubplicatesPHQ9) { #for-loop removing duplicates
+ #i <- anyDuplicated(PHQ9$id)
+ #PHQ9 <- PHQ9[-i,]
+  # }
+#n_occurNoDuplicatesPHQ9 <- data.frame(table(PHQ9$id))  #shows there are no duplicates reamining
+
+#Remove duplicates Beck----
+#n_occurWithDuplicatesBeck <- data.frame(table(Beck$id)) #gives a dataframe of how many times each id occured in the data
+#NumberOfDubplicatesBeck <- sum(n_occurWithDuplicatesBeck$Freq-1) #gives the number of duplicates
+ #for (j in 1:NumberOfDubplicatesBeck) { #for-loop removing duplicates
+ #j <- anyDuplicated(Beck$id)
+ #Beck <- Beck[-j,]
+  # }
+#n_occurNoDuplicatesBeck <- data.frame(table(Beck$id))  #shows there are no duplicates reamining
+
+
+#Remove duplicates AllParticipants----
+n_occurWithDuplicatesAll <- data.frame(table(AllParticipants$id)) #gives a dataframe of how many times each id occured in the data
+NumberOfDubplicatesAll <- sum(n_occurWithDuplicatesAll$Freq-1) #gives the number of duplicates
+ for (j in 1:NumberOfDubplicatesAll) { #for-loop removing duplicates
+ j <- anyDuplicated(AllParticipants$id)
+ AllParticipants <- AllParticipants[-j,]
+   }
+n_occurNoDuplicatesAll <- data.frame(table(AllParticipants$id))  #shows there are no duplicates reamining
+
+#Remove duplicates AllParticipantsTest----
+n_occurWithDuplicatesAllTest <- data.frame(table(AllParticipantsTest$id)) #gives a dataframe of how many times each id occured in the data
+#NumberOfDubplicatesAll <- sum(n_occurWithDuplicatesAll$Freq-1) #gives the number of duplicates
+ #for (j in 1:NumberOfDubplicatesAll) { #for-loop removing duplicates
+ #j <- anyDuplicated(AllParticipantsTest$id)
+ #AllParticipantsTest <- AllParticipantsTest[-j,]
+   #}
+#n_occurNoDuplicatesAll <- data.frame(table(AllParticipantsTest$id))  #shows there are no duplicates reamining
+
+#Remove columns and rows with string identifiers----
+#AllParticipants <- AllParticipants[,-12] #Removes second id column
+#AllParticipants <- AllParticipants[c(-1,-2),] #removes row of questions and import id
+
+#Convert character to numeric in all columns----
+AllParticipants[ , c(1:ncol(AllParticipants))] <- apply(AllParticipants[ , c(1:ncol(AllParticipants))], 2, function(x) as.numeric(as.character(x)))
+
+AllParticipantsTest[ , c(1:ncol(AllParticipantsTest))] <- apply(AllParticipantsTest[ , c(1:ncol(AllParticipantsTest))], 2, function(x) as.numeric(as.character(x)))
+
+#Training sets----
+PHQ9 <- AllParticipants[,2:10]
+Beck <- AllParticipants[,11:31]
+Demographics <- AllParticipants[,32:47]
+SAM <- AllParticipants[,48:73]
+SAMEpisodic <- SAM[,1:8]
+SAMSemantic <- SAM[,9:14]
+SAMSpatial <- SAM[,15:20]
+SAMFuture <- SAM[,21:26]
+
+
+#Test Sets----
+PHQ9Test <- AllParticipantsTest[,c(1:9)]
+BeckTest <- AllParticipantsTest[,c(10:30)]
+SAMEpisodicTest <- AllParticipantsTest[,c(51:58)]
+
+
+#Reverse code questions 1 and 2
+for (b in 1:2) {
+  SAMEpisodic[,b] <- (max(SAMEpisodic) +1 ) - SAMEpisodic[,b]
+ SAMEpisodicTest[,b] <- (max(SAMEpisodicTest) +1 ) - SAMEpisodicTest[,b]
+}
+
+```
+
+#Create Variable groups
+```{r}
+#Make key words as each variable representing each question in PHQ9----
+colnames(PHQ9) <- c('Pleasure','Hopeless','Sleep','Energy','Appetite','Failure','Focus','Speed','Suicide')
+rownames(PHQ9) <-c(1:nrow(PHQ9))
+
+colnames(PHQ9Test) <- c('Pleasure','Hopeless','Sleep','Energy','Appetite','Failure','Focus','Speed','Suicide')
+rownames(PHQ9Test) <-c(1:nrow(PHQ9Test))
+
+#Make key words as each variable representing each question in Beck----
+colnames(Beck) <- c('Numbness','Hot','Wobbly','Tense','Fear','Dizzy','Heart','Unsteady','Terrified','Nervous', 'Choking', 'Trembling', 'Shaky', 'Control', 'Breathing', 'Dying', 'Scared', 'Indigestion', 'Faint', 'Flushed', 'Sweats')
+rownames(Beck) <-c(1:nrow(Beck))
+
+colnames(BeckTest) <- c('Numbness','Hot','Wobbly','Tense','Fear','Dizzy','Heart','Unsteady','Terrified','Nervous', 'Choking', 'Trembling', 'Shaky', 'Control', 'Breathing', 'Dying', 'Scared', 'Indigestion', 'Faint', 'Flushed', 'Sweats')
+rownames(BeckTest) <-c(1:nrow(BeckTest))
+
+#Make key words as each variable representing each question in SAMEpisodic----
+colnames(SAMEpisodic) <- c("Specific", "Order", "Object", "Wearing", "Confidence", "Many", "Day", "People")
+rownames(SAMEpisodic) <-c(1:nrow(SAMEpisodic))
+
+colnames(SAMEpisodicTest) <- c("Specific", "Order", "Object", "Wearing", "Confidence", "Many", "Day", "People")
+rownames(SAMEpisodicTest) <-c(1:nrow(SAMEpisodicTest))
+
+#Convert character to numeric in all columns----
+PHQ9[ , c(1:ncol(PHQ9))] <- apply(PHQ9[ , c(1:ncol(PHQ9))], 2, function(x) as.numeric(as.character(x)))
+
+PHQ9Test[ , c(1:ncol(PHQ9Test))] <- apply(PHQ9Test[ , c(1:ncol(PHQ9Test))], 2, function(x) as.numeric(as.character(x)))
+
+Beck[ , c(1:ncol(Beck))] <- apply(Beck[ , c(1:ncol(Beck))], 2, function(x) as.numeric(as.character(x)))
+
+BeckTest[ , c(1:ncol(BeckTest))] <- apply(BeckTest[ , c(1:ncol(BeckTest))], 2, function(x) as.numeric(as.character(x)))
+
+SAMEpisodic[ , c(1:ncol(SAMEpisodic))] <- apply(SAMEpisodic[ , c(1:ncol(SAMEpisodic))], 2, function(x) as.numeric(as.character(x)))
+
+SAMEpisodicTest[ , c(1:ncol(SAMEpisodicTest))] <- apply(SAMEpisodicTest[ , c(1:ncol(SAMEpisodicTest))], 2, function(x) as.numeric(as.character(x)))
+
+#Creat grouping based on Depression Severity----
+ColumnsPHQ9 <- length(PHQ9)
+totalscorePHQ9 <- rowSums(PHQ9[,1:ColumnsPHQ9]) 
+for (i in 1:length(totalscorePHQ9)){
+severity <- totalscorePHQ9[i]
+  if (severity <= 4){
+  totalscorePHQ9[i] <- 1 #Minimal depression
+  }
+  if (severity > 4 & severity <= 9){
+  totalscorePHQ9[i] <- 2 #Mild depression
+  }
+  if (severity > 9 & severity <= 14){
+  totalscorePHQ9[i] <- 3 #Moderate depression
+  }
+  if (severity > 14 & severity <= 19){
+  totalscorePHQ9[i] <- 4 #Moderately severe depression
+  }
+  if (severity >19){
+  totalscorePHQ9[i] <- 5 #Severe depression
+  }
+}
+
+#Creat grouping based on Anxiety Severity----
+ColumnsBeck <- length(Beck)
+totalscoreBeck <- rowSums(Beck[,1:ColumnsBeck]) 
+for (i in 1:length(totalscoreBeck)){
+severityAnxiety <- totalscoreBeck[i]
+  if (severityAnxiety <= 21){
+  totalscoreBeck[i] <- 1 #Low Anxiety
+  }
+  if (severityAnxiety > 21 & severityAnxiety <= 35){
+  totalscoreBeck[i] <- 2 #Moderate Anxiety
+  }
+  if (severityAnxiety > 35){
+  totalscoreBeck[i] <- 3 #Concerning levels of Anxiety
+  }
+}
+
+BothTrain <- cbind(PHQ9, Beck)
+BothTest <- cbind(PHQ9Test, BeckTest)
+```
+
+
+## Data set: PHQ 
+It measures the 9 different beers (rows) on 30 beer characteristics (columns).
+
+```{r data_set}
+#Training sets----
+head(PHQ9, n = 6L)
+head(Beck, n = 6L)
+head(SAMEpisodic, n = 6L)
+
+#Test sets----
+head(PHQ9Test, n = 6L)
+head(BeckTest, n =6L)
+head(SAMEpisodicTest, n = 6L)
+```
+
+#Covariance Plots
+```{r}
+
+# Compute the covariance matrix----
+XY.corPB <- cov(PHQ9,Beck)
+# Plot it with corrplot
+corrplot(XY.corPB, method = "color")
+
+XY.corPS <- cov(PHQ9,SAMEpisodic)
+# Plot it with corrplot
+corrplot(XY.corPS, method = "color")
+
+XY.corBS <- cov(Beck,SAMEpisodic)
+# Plot it with corrplot
+corrplot(XY.corBS, method = "color")
+```
+
+# Analysis
+```{r}
+#install.packages('pls')
+library('pls')
+
+#Change for formula
+SAMEpisodicResponse <- as.matrix(SAMEpisodic)
+PHQ9Terms <- as.matrix(PHQ9)
+BeckTerms <- as.matrix(Beck)
+BothTerms <- as.matrix(BothTrain)
+
+#PLSRs Training
+resPLSRps <- plsr(SAMEpisodicResponse ~ PHQ9Terms, ncomp = ncol(PHQ9), data = PHQ9, validation = "LOO")
+resPLSRbs <- plsr(SAMEpisodicResponse ~ BeckTerms, ncomp = ncol(Beck), data = Beck, validation = "LOO")
+resPLSRboths <- plsr(SAMEpisodicResponse ~ BothTerms, ncomp = ncol(BothTrain), data = BothTrain, validation = "LOO")
+
+#PLSRs Testing
+resPLSRpsRobust <- RMSEP(resPLSRps, newdata = PHQ9Test)
+resPLSRbsRobust <- RMSEP(resPLSRbs, newdata = BeckTest)
+resPLSRbothsRobust <- RMSEP(resPLSRboths, newdata = BothTest)
+```
+
+#Scree Plot
+```{r}
+PlotScree(ev = explvar(resPLSRps),
+               plotKaiser = TRUE,
+               title = "PLSR PHQ9 and SAM Episodic Explained Variance per Dimension")
+
+PlotScree(ev = explvar(resPLSRbs),
+               plotKaiser = TRUE,
+               title = "PLSR Beck and SAM Episodic Explained Variance per Dimension")
+
+PlotScree(ev = explvar(resPLSRboths),
+               plotKaiser = TRUE,
+               title = "PLSR PHQ9/Beck and SAM Episodic Explained Variance per Dimension")
+
+```
+
+#Crossvalidation Predictions
+```{r}
+#PHQ9 and SAM Episodic
+plot(resPLSRps, ncomp = 1, asp = 1, line = TRUE)
+
+#Beck and SAM Episodic
+plot(resPLSRbs, ncomp = 1, asp = 1, line = TRUE)
+
+#Both PHQ9 and Beck on SAM Episodic
+plot(resPLSRboths, ncomp = 2, asp = 1, line = TRUE)
+```
+
+
+###Weights 
+```{r row factor scores}
+#Weights PHQ9
+PHQ9Colors <- prettyGraphsColorSelection(n.colors = ncol(PHQ9))
+###### 1 ====
+ctri <- resPLSRps$loading.weights
+# BR1
+c001.plotCtrP.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri[,1]), 
+                       threshold = 100 / nrow(ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(PHQ9Colors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'PHQ9 Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrP.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri[,2]), 
+  threshold = 100 / nrow(ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(PHQ9Colors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'PHQ9 Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+#Weights Beck
+BeckColors <- prettyGraphsColorSelection(n.colors = ncol(Beck))
+###### 1 ====
+ctri2 <- resPLSRbs$loading.weights
+# BR1
+c001.plotCtrB.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri2[,1]), 
+                       threshold = 100 / nrow(ctri2), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(BeckColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'Beck Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrB.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri2[,2]), 
+  threshold = 100 / nrow(ctri2), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(BeckColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'Beck Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+#Weights Both
+BothColors <- matrix(,ncol = 30)
+BothColors[,1:9] <- "mediumorchid4"
+BothColors[,10:30] <- "olivedrab3"
+###### 1 ====
+ctri2 <- resPLSRboths$loading.weights
+# BR1
+c001.plotCtrBoth.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri2[,1]), 
+                       threshold = 100 / nrow(ctri2), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(BothColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'Both Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrBoth.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri2[,2]), 
+  threshold = 100 / nrow(ctri2), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(BothColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'Both Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtrP.1),
+    as.grob(c002.plotCtrP.2),
+    ncol = 2,nrow = 1,
+    top = textGrob("Contributions", gp = gpar(fontsize = 18, font = 3))
+  )
+BothWeightsPHQ9 <- recordPlot() # you need this line to be able to save them in the end
+
+  grid.arrange(
+    as.grob(c001.plotCtrB.1),
+    as.grob(c002.plotCtrB.2),
+    ncol = 2,nrow = 1,
+    top = textGrob("Contributions", gp = gpar(fontsize = 18, font = 3))
+  )
+BothWeightsBeck <- recordPlot() # you need this line to be able to save them in the end
+
+  grid.arrange(
+    as.grob(c001.plotCtrBoth.1),
+    as.grob(c002.plotCtrBoth.2),
+    ncol = 2,nrow = 1,
+    top = textGrob("Contributions", gp = gpar(fontsize = 18, font = 3))
+  )
+BothWeightsBoth <- recordPlot() # you need this line to be able to save them in the end
+```
+
+
+# Latent Variables
+```{r}
+#Latent Variables of PHQ9
+plot.lv1 <- createFactorMap(resPLSRps$scores[,1:2],
+                            title = "Latent Variables of PHQ9",
+                         col.points = "mediumorchid4",
+                         col.labels = "mediumorchid4",
+                         display.labels = FALSE,
+                         alpha.points = 0.2
+                         )
+
+plot1 <- plot.lv1$zeMap_background + plot.lv1$zeMap_dots
+plot1
+
+#Latent Variables of Beck
+plot.lv2 <- createFactorMap(resPLSRbs$scores[,1:2],
+                            title = "Latent Variables of Beck",
+                         col.points = "olivedrab3",
+                         col.labels = "olivedrab3",
+                         display.labels = FALSE,
+                         alpha.points = 0.2
+                         )
+
+plot2 <- plot.lv2$zeMap_background + plot.lv2$zeMap_dots
+plot2
+
+#Latent Variables of Both
+plot.lv3 <- createFactorMap(resPLSRboths$scores[,1:2],
+                            title = "Latent Variables of Both",
+                         col.points = "royalblue",
+                         col.labels = "royalblue",
+                         display.labels = FALSE,
+                         alpha.points = 0.2
+                         )
+
+plot3 <- plot.lv3$zeMap_background + plot.lv3$zeMap_dots
+plot3
+```
+
+
+
+#Root Mean Square Error of Prediction Comparisons
+```{r}
+#Standard deviations of the residuals from the regression line i.e. how clustered the predicted data pionts are around the line of best fit
+PHQ9TrainPlot <- plot(RMSEP(resPLSRps),main = 'PHQ9 Train')
+PHQ9TestPlot <- plot(resPLSRpsRobust, main = "PHQ9 Test")
+
+BeckTrainPlot <- plot(RMSEP(resPLSRbs),main = 'Beck Train')
+BeckTestPlot <- plot(resPLSRbsRobust, main = "Beck Test")
+
+BothTrainPlot <- plot(RMSEP(resPLSRboths),main = 'Both Train')
+BothTestPlot <- plot(resPLSRbothsRobust, main = "Both Test")
+```
+
+# Correlation Between Predicted and Observed Scores
+```{r}
+detach("package:pls", unload=TRUE)
+
+#Correlation of PHQ9 predicted SAM Episdoic with observed SAM Episodic
+XY.corPB <- cor(resPLSRps$validation$pred[,,1],SAMEpisodic)
+# Plot it with corrplot
+corrplot(XY.corPB, method = "number", addCoefasPercent = TRUE)
+
+#Correlation of Beck predicted SAM Episdoic with observed SAM Episodic
+XY.corPB <- cor(resPLSRbs$validation$pred[,,1],SAMEpisodic)
+# Plot it with corrplot
+corrplot(XY.corPB, method = "number", addCoefasPercent = TRUE)
+
+#Correlation of Both predicted SAM Episdoic with observed SAM Episodic
+XY.corPB <- cor(resPLSRboths$validation$pred[,,2],SAMEpisodic)
+# Plot it with corrplot
+corrplot(XY.corPB, method = "number", addCoefasPercent = TRUE)
+```
+
+
+## Summary
+
+When we interpret the factor scores and latent variables, the PLSR revealed:
+
+Number of components:
+
+PHQ9: only 1 was above the Kaiser line
+
+Beck: only 1 was above the Kaiser line
+
+Both: 2 were above the Kaiser line
+
+RMSEP:
+
+All error of predictions were a little bit above one standard deviation. However, this is Likert scale data (ordinal) so it is difficult to determine what 1 SD is. 
+
+There didn't seem to be much difference between the testing and training data meaning the predictions are able to be generalized. 
+
+Covariance Plots:
+
+After recoding the 1st and 2nd question in the SAM Episodic portion, it seems that a PLSC may reveal that higher scores on Beck and PHQ9 are associated with lower scores on the SAM Episodic!
+
+
+

@@ -1,0 +1,1145 @@
+```{r Clear Workspace}
+#Clear Workspace----
+rm(list = ls())
+```
+---
+title: "3-PLSC"
+author: "Theodore Wiebold"
+date: "October 31, 2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+#devtools::install_github("herveabdi/PTCA4CATA") # you only need this line of code if you haven't downloaded the #package
+#install.packages("gridExtra")
+#install.packages("ggplotify")
+#install.packages("grid")
+library(devtools)
+library(ExPosition)
+library(corrplot)
+library(ggplot2)
+library(PTCA4CATA)
+
+# The following three functions allow you to arrange your plots in Rmarkdown
+library(gridExtra)
+library(ggplotify)
+library(grid)
+
+#install.packages('TExPosition')
+#install.packages('ggplot2')
+#install.packages('GGally')
+#install.packages('CCA')
+#install.packages('TInPosition')
+
+library(InPosition)
+# use the last version of PTCA
+#devtools::install_github('HerveAbdi/PTCA4CATA')
+#install.packages('gplots')
+library(gplots)
+#also install data4PCCAR last version
+#devtools::install_github('HerveAbdi/data4PCCAR')
+library(data4PCCAR)
+library(tidyverse)
+
+library('TExPosition')
+library('ggplot2')
+library('GGally')
+library('CCA')
+library('TInPosition')
+
+#devtools::install_github("kassambara/ggpubr")
+library("ggpubr")
+```
+
+# Data Cleaning
+```{r}
+#Import data----
+RawParticipants <- read.csv("~/Desktop/Experimental Psych/Depression and Memory Lab/Raw Data _Fall10.28.19.csv", header = TRUE, sep = ",", quote="\"", row.names = NULL)
+
+
+Demographics <- RawParticipants[,c(1:20, 32:35, 126:129)]
+RawParticipants <- RawParticipants[,-c(1:20)]
+
+PHQ9 <- RawParticipants[,c(1:9)]
+RawParticipants <- RawParticipants[,-c(1:15)]
+
+Beck <- RawParticipants[,c(1:10, 95:105)]
+RawParticipants <- RawParticipants[,-c(1:43)]
+
+SAM <- RawParticipants[,c(1:26)]
+RawParticipants <- RawParticipants[,-c(1:26)]
+
+
+#Concatenate all tables for cleaning
+AllParticipants <- cbind2(PHQ9,Beck)
+AllParticipants <- cbind2(AllParticipants, SAM)
+AllParticipants <- cbind2(AllParticipants, Demographics$DH_2)
+rawAllParticipants <- nrow(AllParticipants) #shows number of observations from raw dataset
+
+#Remove rows with missing data----
+#PHQ9 <- na.omit(PHQ9) #omits rows with no values
+#naomitPHQ9 <- nrow(PHQ9) #shows number of observations from naomit data
+#naomitPHQ9 <- rawPHQ9 - naomitPHQ9 #shows number of observations removed 
+#Beck <- na.omit(Beck) #omits rows with no values
+#naomitBeck <- nrow(Beck) #shows number of observations from naomit data
+#naomitBeck <- rawBeck - naomitBeck #shows number of observations removed 
+
+#Removes rows with NA
+AllParticipants <- na.omit(AllParticipants) #omits rows with no values
+naomitAllParticipants <- nrow(AllParticipants) #shows number of observations from naomit data
+naomitAllParticipants <- rawAllParticipants - naomitAllParticipants #shows number of observations removed
+
+#Run these two lines to determine if there are duplicates----
+n_occurWithDuplicatesAll <- data.frame(table(AllParticipants$id)) #gives a dataframe of how many times each id occured in the data
+NumberOfDubplicatesAll <- sum(n_occurWithDuplicatesAll$Freq-1) #gives the number of duplicates
+#Run next bit of code ONLY if there are duplicates
+
+#Remove duplicates AllParticipants----
+# for (j in 1:NumberOfDubplicatesAll) { #for-loop removing duplicates
+# j <- anyDuplicated(AllParticipants$id)
+# AllParticipants <- AllParticipants[-j,]
+#   }
+#n_occurNoDuplicatesAll <- data.frame(table(AllParticipants$id))  #shows there are no duplicates reamining
+
+#Convert character to numeric in all columns----
+AllParticipants[ , c(1:ncol(AllParticipants))] <- apply(AllParticipants[ , c(1:ncol(AllParticipants))], 2, function(x) as.numeric(as.character(x)))
+
+#Get data tables after cleaning----
+PHQ9 <- AllParticipants[,1:9]
+Beck <- AllParticipants[,10:30]
+SAMEpisodic <- AllParticipants[,31:38]
+DH_2 <- AllParticipants[,57]
+
+
+#Reverse code questions 1 and 2
+for (b in 1:2) {
+  SAMEpisodic[,b] <- (max(SAMEpisodic) +1 ) - SAMEpisodic[,b]
+}
+```
+
+# Create Design Variables
+```{r}
+#Creat grouping based on Depression Severity----
+ColumnsPHQ9 <- length(PHQ9)
+totalscorePHQ9 <- rowSums(PHQ9[,1:ColumnsPHQ9]) 
+for (i in 1:length(totalscorePHQ9)){
+severity <- totalscorePHQ9[i]
+  if (severity <= 4){
+  totalscorePHQ9[i] <- 1 #Minimal depression
+  }
+  if (severity > 4 & severity <= 9){
+  totalscorePHQ9[i] <- 2 #Mild depression
+  }
+  if (severity > 9 & severity <= 14){
+  totalscorePHQ9[i] <- 3 #Moderate depression
+  }
+  if (severity > 14 & severity <= 19){
+  totalscorePHQ9[i] <- 4 #Moderately severe depression
+  }
+  if (severity >19){
+  totalscorePHQ9[i] <- 5 #Severe depression
+  }
+}
+
+BothPB <- cbind2(PHQ9, Beck)
+Depression <- as.numeric(paste(DH_2, totalscorePHQ9, sep = ""))
+table(Depression)
+
+#Need to remove participants that create groups of 1 in the design variable for Boot4Mean to work
+#> which(Depression==31, arr.ind=TRUE)
+#[1] 382
+#> which(Depression==32, arr.ind=TRUE)
+#[1] 533 594
+#> which(Depression==33, arr.ind=TRUE)
+#[1] 183 301 414 473 507
+#> which(Depression==34, arr.ind=TRUE)
+#[1] 72
+#> which(Depression==35, arr.ind=TRUE)
+#[1] 386
+#> which(Depression==42, arr.ind=TRUE)
+#[1] 180 648 808
+#> which(Depression==43, arr.ind=TRUE)
+#[1] 699
+#> which(Depression==44, arr.ind=TRUE)
+#[1] 162 396 460 724
+#AllParticipants <- AllParticipants[-c(72,162,180,183,301,382,386,396,414,460,473,507,533,594,648,699,724,808),]
+#totalscorePHQ9 <- totalscorePHQ9[-c(72,162,180,183,301,382,386,396,414,460,473,507,533,594,648,699,724,808)]
+#801 participants left
+
+x2 <- 0
+for (z in 11:18) {
+  x1 <- which(Depression==as.numeric(rownames(table(Depression)))[z], arr.ind = TRUE)
+  x2 <- cbind2(t(data.frame(x1)),x2)
+}    
+x2 <- x2[,-19]
+AllParticipants <- AllParticipants[-x2,]
+totalscorePHQ9 <- totalscorePHQ9[-x2] 
+
+
+#Get data tables after revoming single participant groups----
+PHQ9 <- AllParticipants[,1:9]
+Beck <- AllParticipants[,10:30]
+SAMEpisodic <- AllParticipants[,31:38]
+
+#Reverse code questions 1 and 2
+for (b in 1:2) {
+  SAMEpisodic[,b] <- (max(SAMEpisodic) +1 ) - SAMEpisodic[,b]
+}
+
+DH_2 <- AllParticipants[,57]
+Depression <- as.numeric(paste(DH_2, totalscorePHQ9, sep = ""))
+table(Depression)
+hist(Depression, breaks = 50)
+
+#Make key words as each variable representing each question in PHQ9----
+colnames(PHQ9) <- c('Pleasure','Hopeless','Sleep','Energy','Appetite','Failure','Focus','Speed','Suicide')
+rownames(PHQ9) <-c(1:nrow(PHQ9))
+
+#Make key words as each variable representing each question in Beck----
+colnames(Beck) <- c('Numbness','Hot','Wobbly','Tense','Fear','Dizzy','Heart','Unsteady','Terrified','Nervous', 'Choking', 'Trembling', 'Shaky', 'Control', 'Breathing', 'Dying', 'Scared', 'Indigestion', 'Faint', 'Flushed', 'Sweats')
+rownames(Beck) <-c(1:nrow(Beck))
+
+#Make key words as each variable representing each question in SAMEpisodic----
+colnames(SAMEpisodic) <- c("Specific", "Order", "Object", "Wearing", "Confidence", "Many", "Day", "People")
+rownames(SAMEpisodic) <-c(1:nrow(SAMEpisodic))
+
+#Convert character to numeric in all columns----
+PHQ9[ , c(1:ncol(PHQ9))] <- apply(PHQ9[ , c(1:ncol(PHQ9))], 2, function(x) as.numeric(as.character(x)))
+
+Beck[ , c(1:ncol(Beck))] <- apply(Beck[ , c(1:ncol(Beck))], 2, function(x) as.numeric(as.character(x)))
+
+SAMEpisodic[ , c(1:ncol(SAMEpisodic))] <- apply(SAMEpisodic[ , c(1:ncol(SAMEpisodic))], 2, function(x) as.numeric(as.character(x)))
+
+BothPB <- cbind2(PHQ9, Beck)
+```
+
+## Data sets: PHQ9, BAI, SAM Episodic 
+
+```{r data_set}
+head(PHQ9, n = 6L)
+head(Beck, n = 6L)
+head(SAMEpisodic, n = 6L)
+```
+
+# Covariance Plots
+```{r}
+# Compute the covariance matrix
+XY.cor <- cov(PHQ9,Beck)
+# Plot it with corrplot
+corrplot(XY.cor, method = "color")
+
+# Compute the covariance matrix
+XY.cor <- cov(PHQ9,SAMEpisodic)
+# Plot it with corrplot
+corrplot(XY.cor, method = "color")
+
+# Compute the covariance matrix
+XY.cor <- cov(SAMEpisodic,Beck)
+# Plot it with corrplot
+corrplot(XY.cor, method = "color")
+```
+
+# Analysis
+```{r}
+resPLSCps <- tepPLS(PHQ9, SAMEpisodic,
+                scale1 = "SS1", scale2 = "SS1", # Make to use 'SS1' rather than TRUE
+                DESIGN = Depression,
+                graphs =  FALSE)
+
+resPLSCbs <- tepPLS(Beck, SAMEpisodic,
+                scale1 = "SS1", scale2 = "SS1", # Make to use 'SS1' rather than TRUE
+                DESIGN = Depression,
+                graphs =  FALSE)
+
+resPLSCboths <- tepPLS(BothPB, SAMEpisodic,
+                scale1 = "SS1", scale2 = "SS1", # Make to use 'SS1' rather than TRUE
+                DESIGN = Depression,
+                graphs =  FALSE)
+```
+
+
+# Scree Plots
+```{r}
+#PHQ9 and SAMEpisodic
+resPerm4PLSCps <- perm4PLSC(PHQ9, # First Data matrix 
+                          SAMEpisodic, # Second Data matrix
+                          nIter = 1000 # How mny iterations
+                          )
+
+scree.PLSCps <- PlotScree(ev = resPLSCps$TExPosition.Data$eigs,
+                        p.ev = resPerm4PLSCps$pEigenvalues,
+               plotKaiser = TRUE,
+               title = "PLSC PHQ9 and SAM Episodic Explained Variance per Dimension")
+
+#Beck and SAMEpisodic
+resPerm4PLSCbs <- perm4PLSC(Beck, # First Data matrix 
+                          SAMEpisodic, # Second Data matrix
+                          nIter = 1000 # How mny iterations
+                          )
+
+scree.PLSCbs <- PlotScree(ev = resPLSCbs$TExPosition.Data$eigs,
+                        p.ev = resPerm4PLSCbs$pEigenvalues,
+               plotKaiser = TRUE,
+               title = "PLSC Beck and SAM Episodic Explained Variance per Dimension")
+
+#Both and SAMEpisodic
+resPerm4PLSCboths <- perm4PLSC(BothPB, # First Data matrix 
+                          SAMEpisodic, # Second Data matrix
+                          nIter = 1000 # How mny iterations
+                          )
+
+scree.PLSCboths <- PlotScree(ev = resPLSCboths$TExPosition.Data$eigs,
+                        p.ev = resPerm4PLSCboths$pEigenvalues,
+               plotKaiser = TRUE,
+               title = "PLSC Both and SAM Episodic Explained Variance per Dimension")
+```
+
+
+
+# PHQ9 and SAM Episodic Latent Variables and Weights
+```{r row factor scores}
+# get colors for groups
+uniquecol <- unique(resPLSCps$Plotting.Data$fii.col)
+colorslxly <- uniquecol
+rownames(colorslxly) <- data.frame(Depression)[rownames(uniquecol),]
+
+#Legend
+#Makes the legend for graph----
+Legend <- plot(NULL, xaxt = 'n', yaxt = 'n', bty = 'n', ylab = '', xlab = '', xlim = 0:1, ylim = 0:1)
+Legend <- legend("top", legend = c("DH_2", "1 = Yes", "2 = No", "3 = UnSure", "4 = Decline", "Deperssion Severity", "1 = Min", "2 = Mild", "3 = Moderate", "4 = Moderate Severe", "5 = Severe", "Example:", "11 = DH_2 Yes, Minimum Depression Severeity"),pch = 16, pt.cex = 2, cex = .75, bty = 'n', col = NA)
+Lengend <- mtext("Desgin = DH_2, Depression Severity", side = 3, cex = 1.5)
+
+#Latent Variables for Depression----
+lxy.1 <- cbind(resPLSCps$TExPosition.Data$lx[,1], resPLSCps$TExPosition.Data$ly[,1])
+colnames(lxy.1) <- c("Lx1", "Ly1")
+lxy.2 <- cbind(resPLSCps$TExPosition.Data$lx[,2], resPLSCps$TExPosition.Data$ly[,2])
+colnames(lxy.2) <- c("Lx2", "Ly2")
+
+# compute means
+lxy.1.means <- getMeans(lxy.1,Depression)
+lxy.2.means <- getMeans(lxy.2,Depression)
+
+# get bootstrap intervals of groups
+lxy.means.boot1 <- Boot4Mean(lxy.1, Depression)
+colnames(lxy.means.boot1$BootCube) <- c("Lx1", "Ly1")
+row.names(lxy.means.boot1$BootCube) <- rownames(lxy.1.means)
+
+#First Latent Variable Pair
+plot.lv1 <- createFactorMap(lxy.1,
+                            title = "First Latent Variable Pair",
+                         col.points = resPLSCps$Plotting.Data$fii.col,
+                         col.labels = resPLSCps$Plotting.Data$fii.col,
+                         alpha.points = 0.2
+                         )
+
+plot1.mean <- createFactorMap(lxy.1.means,
+                              col.points = colorslxly[rownames(lxy.1.means),],
+                              col.labels = colorslxly[rownames(lxy.1.means),],
+                              cex = 4,
+                              pch = 17,
+                              alpha.points = 0.8)
+
+plot1.meanCI <- MakeCIEllipses(lxy.means.boot1$BootCube[,c(1:2),], # get the first two components
+                              col = colorslxly[rownames(lxy.means.boot1$BootCube),],
+                              names.of.factors = c("Lx1", "Ly1")
+                              )
+
+plot1 <- plot.lv1$zeMap_background + plot.lv1$zeMap_dots + plot1.mean$zeMap_dots + plot1.mean$zeMap_text + plot1.meanCI
+plot1
+
+#Second Latent Variable Pair
+# get bootstrap intervals of groups
+lxy.means.boot2 <- Boot4Mean(lxy.2, Depression)
+colnames(lxy.means.boot2$BootCube) <- c("Lx2", "Ly2")
+
+plot.lv2 <- createFactorMap(lxy.2,
+                            title = "Second Latent Variable Pair",
+                         col.points = resPLSCps$Plotting.Data$fii.col,
+                         col.labels = resPLSCps$Plotting.Data$fii.col,
+                         alpha.points = 0.2
+                         )
+
+plot2.mean <- createFactorMap(lxy.2.means,
+                              col.points = colorslxly[rownames(lxy.2.means),],
+                              col.labels = colorslxly[rownames(lxy.2.means),],
+                              cex = 4,
+                              pch = 17,
+                              alpha.points = 0.8)
+
+plot2.meanCI <- MakeCIEllipses(lxy.means.boot2$BootCube[,c(1:2),], # get the first two components
+                              col = colorslxly[rownames(lxy.means.boot2$BootCube),],
+                              names.of.factors = c("Lx2", "Ly2")
+                              )
+
+plot2 <- plot.lv2$zeMap_background + plot.lv2$zeMap_dots + plot2.mean$zeMap_dots + plot2.mean$zeMap_text + plot2.meanCI
+plot2
+
+#Weights PHQ9
+PHQ9colors <- prettyGraphsColorSelection(n.colors = ncol(PHQ9))
+###### 1 ====
+ctri <- resPLSCps$TExPosition.Data$pdq$p
+# BR1
+c001.plotCtrp.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri[,1]), 
+                       threshold = 100 / nrow(ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(PHQ9colors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'PHQ9 Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+###### 2 ====
+# 
+c002.plotCtrp.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri[,2]), 
+  threshold = 100 / nrow(ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(PHQ9colors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'PHQ9 Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+
+#################################################################################################
+#Weights SAMEpisodic
+SAMEpisodicColors <- prettyGraphsColorSelection(n.colors = (ncol(SAMEpisodic)+ncol(PHQ9)))
+#Get different colors than PHQ9
+SAMEpisodicColors <- SAMEpisodicColors[(ncol(PHQ9)+1):length(SAMEpisodicColors)]
+###### 1 ====
+ctri2 <- resPLSCps$TExPosition.Data$pdq$q
+# BR1
+c001.plotCtrq.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri2[,1]), 
+                       threshold = 100 / nrow(ctri2), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(SAMEpisodicColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'SAMEpisodic Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrq.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri2[,2]), 
+  threshold = 100 / nrow(ctri2), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(SAMEpisodicColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'SAMEpisodic Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtrp.1),
+    as.grob(c001.plotCtrq.1),
+    as.grob(c002.plotCtrp.2),
+    as.grob(c002.plotCtrq.2),
+    ncol = 2,nrow = 2,
+    top = textGrob("Weights", gp = gpar(fontsize = 18, font = 3))
+  )
+BothWeights <- recordPlot() # you need this line to be able to save them in the end
+
+#PHQ9 and SAM Episodic correlation of Row Factor Scores of comp 1
+PHQ9SAMEpisodicScatter <- ggscatter(data.frame(lxy.1), x = "Lx1", y = "Ly1", 
+          add = "reg.line", conf.int = TRUE, color = "mediumorchid4",
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "PHQ9 Row Factor Scores Comp 1", ylab = "SAM Episodic Row Factor Scores Comp 1")
+PHQ9SAMEpisodicScatter
+```
+
+
+
+# Beck and SAM Episodic Latent Variables and Weights
+```{r}
+#Latent Variables for Depression----
+lxy.1 <- cbind(resPLSCbs$TExPosition.Data$lx[,1], resPLSCbs$TExPosition.Data$ly[,1])
+colnames(lxy.1) <- c("Lx1", "Ly1")
+lxy.2 <- cbind(resPLSCbs$TExPosition.Data$lx[,2], resPLSCbs$TExPosition.Data$ly[,2])
+colnames(lxy.2) <- c("Lx2", "Ly2")
+
+# compute means
+lxy.1.means <- getMeans(lxy.1,Depression)
+lxy.2.means <- getMeans(lxy.2,Depression)
+
+# get colors for groups
+uniquecol <- unique(resPLSCbs$Plotting.Data$fii.col)
+colorslxly <- uniquecol
+rownames(colorslxly) <- data.frame(Depression)[rownames(uniquecol),]
+
+# get bootstrap intervals of groups
+lxy.means.boot1 <- Boot4Mean(lxy.1, Depression)
+colnames(lxy.means.boot1$BootCube) <- c("Lx1", "Ly1")
+
+#First Latent Variable Pair
+plot.lv1 <- createFactorMap(lxy.1,
+                            title = "First Latent Variable Pair",
+                         col.points = resPLSCbs$Plotting.Data$fii.col,
+                         col.labels = resPLSCbs$Plotting.Data$fii.col,
+                         alpha.points = 0.2
+                         )
+
+plot1.mean <- createFactorMap(lxy.1.means,
+                              col.points = colorslxly[rownames(lxy.1.means),],
+                              col.labels = colorslxly[rownames(lxy.1.means),],
+                              cex = 4,
+                              pch = 17,
+                              alpha.points = 0.8)
+
+plot1.meanCI <- MakeCIEllipses(lxy.means.boot1$BootCube[,c(1:2),], # get the first two components
+                              col = colorslxly[rownames(lxy.means.boot1$BootCube),],
+                              names.of.factors = c("Lx1", "Ly1")
+                              )
+
+plot1 <- plot.lv1$zeMap_background + plot.lv1$zeMap_dots + plot1.mean$zeMap_dots + plot1.mean$zeMap_text + plot1.meanCI
+plot1
+
+#Second Latent Variable Pair
+# get bootstrap intervals of groups
+lxy.means.boot2 <- Boot4Mean(lxy.2, Depression)
+colnames(lxy.means.boot2$BootCube) <- c("Lx2", "Ly2")
+
+plot.lv2 <- createFactorMap(lxy.2,
+                            title = "Second Latent Variable Pair",
+                         col.points = resPLSCbs$Plotting.Data$fii.col,
+                         col.labels = resPLSCbs$Plotting.Data$fii.col,
+                         alpha.points = 0.2
+                         )
+
+plot2.mean <- createFactorMap(lxy.2.means,
+                              col.points = colorslxly[rownames(lxy.2.means),],
+                              col.labels = colorslxly[rownames(lxy.2.means),],
+                              cex = 4,
+                              pch = 17,
+                              alpha.points = 0.8)
+
+plot2.meanCI <- MakeCIEllipses(lxy.means.boot2$BootCube[,c(1:2),], # get the first two components
+                              col = colorslxly[rownames(lxy.means.boot2$BootCube),],
+                              names.of.factors = c("Lx2", "Ly2")
+                              )
+
+plot2 <- plot.lv2$zeMap_background + plot.lv2$zeMap_dots + plot2.mean$zeMap_dots + plot2.mean$zeMap_text + plot2.meanCI
+plot2
+
+#Weights Beck
+Beckcolors <- prettyGraphsColorSelection(n.colors = ncol(Beck))
+###### 1 ====
+ctri <- resPLSCbs$TExPosition.Data$pdq$p
+# BR1
+c001.plotCtrp.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri[,1]), 
+                       threshold = 100 / nrow(ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(Beckcolors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'Beck Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+###### 2 ====
+# 
+c002.plotCtrp.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri[,2]), 
+  threshold = 100 / nrow(ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(Beckcolors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'Beck Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+
+#################################################################################################
+#Weights SAMEpisodic
+SAMEpisodicColors <- prettyGraphsColorSelection(n.colors = (ncol(SAMEpisodic)+ncol(Beck)))
+#Get different colors than Beck
+SAMEpisodicColors <- SAMEpisodicColors[(ncol(Beck)+1):length(SAMEpisodicColors)]
+###### 1 ====
+ctri2 <- resPLSCbs$TExPosition.Data$pdq$q
+# BR1
+c001.plotCtrq.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri2[,1]), 
+                       threshold = 100 / nrow(ctri2), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(SAMEpisodicColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'SAMEpisodic Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrq.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri2[,2]), 
+  threshold = 100 / nrow(ctri2), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(SAMEpisodicColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'SAMEpisodic Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtrp.1),
+    as.grob(c001.plotCtrq.1),
+    as.grob(c002.plotCtrp.2),
+    as.grob(c002.plotCtrq.2),
+    ncol = 2,nrow = 2,
+    top = textGrob("Weights", gp = gpar(fontsize = 18, font = 3))
+  )
+BothWeights <- recordPlot() # you need this line to be able to save them in the end
+
+#Beck and SAM Episodic correlation of Row Factor Scores of comp 1
+BeckSAMEpisodicScatter <- ggscatter(data.frame(lxy.1), x = "Lx1", y = "Ly1", 
+          add = "reg.line", conf.int = TRUE, color = "mediumorchid4",
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Beck Row Factor Scores Comp 1", ylab = "SAM Episodic Row Factor Scores Comp 1")
+BeckSAMEpisodicScatter
+```
+
+
+# Beck and SAM Episodic Latent Variables and Weights
+```{r}
+#Latent Variables for Depression----
+lxy.1 <- cbind(resPLSCboths$TExPosition.Data$lx[,1], resPLSCboths$TExPosition.Data$ly[,1])
+colnames(lxy.1) <- c("Lx1", "Ly1")
+lxy.2 <- cbind(resPLSCboths$TExPosition.Data$lx[,2], resPLSCboths$TExPosition.Data$ly[,2])
+colnames(lxy.2) <- c("Lx2", "Ly2")
+
+# compute means
+lxy.1.means <- getMeans(lxy.1,Depression)
+lxy.2.means <- getMeans(lxy.2,Depression)
+
+# get colors for groups
+uniquecol <- unique(resPLSCboths$Plotting.Data$fii.col)
+colorslxly <- uniquecol
+rownames(colorslxly) <- data.frame(Depression)[rownames(uniquecol),]
+
+# get bootstrap intervals of groups
+lxy.means.boot1 <- Boot4Mean(lxy.1, Depression)
+colnames(lxy.means.boot1$BootCube) <- c("Lx1", "Ly1")
+
+#First Latent Variable Pair
+plot.lv1 <- createFactorMap(lxy.1,
+                            title = "First Latent Variable Pair",
+                         col.points = resPLSCboths$Plotting.Data$fii.col,
+                         col.labels = resPLSCboths$Plotting.Data$fii.col,
+                         alpha.points = 0.2
+                         )
+
+plot1.mean <- createFactorMap(lxy.1.means,
+                              col.points = colorslxly[rownames(lxy.1.means),],
+                              col.labels = colorslxly[rownames(lxy.1.means),],
+                              cex = 4,
+                              pch = 17,
+                              alpha.points = 0.8)
+
+plot1.meanCI <- MakeCIEllipses(lxy.means.boot1$BootCube[,c(1:2),], # get the first two components
+                              col = colorslxly[rownames(lxy.means.boot1$BootCube),],
+                              names.of.factors = c("Lx1", "Ly1")
+                              )
+
+plot1 <- plot.lv1$zeMap_background + plot.lv1$zeMap_dots + plot1.mean$zeMap_dots + plot1.mean$zeMap_text + plot1.meanCI
+plot1
+
+#Second Latent Variable Pair
+# get bootstrap intervals of groups
+lxy.means.boot2 <- Boot4Mean(lxy.2, Depression)
+colnames(lxy.means.boot2$BootCube) <- c("Lx2", "Ly2")
+
+plot.lv2 <- createFactorMap(lxy.2,
+                            title = "Second Latent Variable Pair",
+                         col.points = resPLSCboths$Plotting.Data$fii.col,
+                         col.labels = resPLSCboths$Plotting.Data$fii.col,
+                         alpha.points = 0.2
+                         )
+
+plot2.mean <- createFactorMap(lxy.2.means,
+                              col.points = colorslxly[rownames(lxy.2.means),],
+                              col.labels = colorslxly[rownames(lxy.2.means),],
+                              cex = 4,
+                              pch = 17,
+                              alpha.points = 0.8)
+
+plot2.meanCI <- MakeCIEllipses(lxy.means.boot2$BootCube[,c(1:2),], # get the first two components
+                              col = colorslxly[rownames(lxy.means.boot2$BootCube),],
+                              names.of.factors = c("Lx2", "Ly2")
+                              )
+
+plot2 <- plot.lv2$zeMap_background + plot.lv2$zeMap_dots + plot2.mean$zeMap_dots + plot2.mean$zeMap_text + plot2.meanCI
+plot2
+
+#Weights Both
+BothColors <- matrix(,ncol = 30)
+BothColors[,1:9] <- "mediumorchid4"
+BothColors[,10:30] <- "olivedrab3"
+###### 1 ====
+ctri <- resPLSCboths$TExPosition.Data$pdq$p
+# BR1
+c001.plotCtrp.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri[,1]), 
+                       threshold = 100 / nrow(ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(BothColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'Both Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+###### 2 ====
+# 
+c002.plotCtrp.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri[,2]), 
+  threshold = 100 / nrow(ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(BothColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'Both Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+
+#################################################################################################
+#Weights SAMEpisodic
+SAMEpisodicColors <- prettyGraphsColorSelection(n.colors = (ncol(SAMEpisodic)+2))
+#Get different colors than Both
+SAMEpisodicColors <- SAMEpisodicColors[3:length(SAMEpisodicColors)]  
+###### 1 ====
+ctri2 <- resPLSCboths$TExPosition.Data$pdq$q
+# BR1
+c001.plotCtrq.1 <- PrettyBarPlot2(
+                       bootratio = round(100*ctri2[,1]), 
+                       threshold = 100 / nrow(ctri2), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(SAMEpisodicColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'SAMEpisodic Weights Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrq.2 <- PrettyBarPlot2(
+  bootratio = round(100*ctri2[,2]), 
+  threshold = 100 / nrow(ctri2), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(SAMEpisodicColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'SAMEpisodic Weights Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtrp.1),
+    as.grob(c001.plotCtrq.1),
+    as.grob(c002.plotCtrp.2),
+    as.grob(c002.plotCtrq.2),
+    ncol = 2,nrow = 2,
+    top = textGrob("Weights", gp = gpar(fontsize = 18, font = 3))
+  )
+BothWeights <- recordPlot() # you need this line to be able to save them in the end
+
+#Both and SAM Episodic correlation of Row Factor Scores of comp 1
+BothSAMEpisodicScatter <- ggscatter(data.frame(lxy.1), x = "Lx1", y = "Ly1", 
+          add = "reg.line", conf.int = TRUE, color = "mediumorchid4",
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Both Row Factor Scores Comp 1", ylab = "SAM Episodic Row Factor Scores Comp 1")
+BothSAMEpisodicScatter
+```
+
+
+
+# Contributions and Bootstraps for PHQ9 and SAM Episodic
+```{r}
+#SAM Episodic
+###### 1 ====
+Fj <- resPLSCps$TExPosition.Data$fj
+ctrj <- resPLSCps$TExPosition.Data$cj
+signed.ctrj <- ctrj * sign(Fj)
+# BR1
+c001.plotCtrj.1 <- PrettyBarPlot2(
+                       bootratio = round(100*signed.ctrj[,1]),
+                       signifOnly = FALSE,
+                       threshold = 100 / nrow(signed.ctrj), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fj.col),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'SAM Episodic Variables. Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrj.2 <- PrettyBarPlot2(
+  bootratio = round(100*signed.ctrj[,2]),
+  signifOnly = FALSE,
+  threshold = 100 / nrow(signed.ctrj), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fj.col),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'SAM Episodic Variables. Dim 2.', 
+  ylab = "Signed Contributions")
+
+#PHQ9
+###### 1 ====
+Fi <- resPLSCps$TExPosition.Data$fi
+ctri <- resPLSCps$TExPosition.Data$ci
+signed.ctri <- ctri * sign(Fi)
+# BR1
+c001.plotCtri.1 <- PrettyBarPlot2(
+                       bootratio = round(100*signed.ctri[,1]), 
+                       threshold = 100 / nrow(signed.ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fi.col),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'PHQ9 Variables. Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtri.2 <- PrettyBarPlot2(
+  bootratio = round(100*signed.ctri[,2]), 
+  threshold = 100 / nrow(signed.ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fi.col),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'PHQ9 Variables. Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtri.1),
+    as.grob(c001.plotCtrj.1),
+    as.grob(c002.plotCtri.2),
+    as.grob(c002.plotCtrj.2),
+    ncol = 2,nrow = 2,
+    top = textGrob("Contributions", gp = gpar(fontsize = 18, font = 3))
+  )
+BothCtrJ <- recordPlot() # you need this line to be able to save them in the end
+#####################################################################################################
+resBoot4PLSC <- Boot4PLSC(PHQ9, # First Data matrix 
+                          SAMEpisodic, # Second Data matrix
+                          nIter = 1000, # How many iterations
+                      Fi = resPLSCps$TExPosition.Data$fi,
+                      Fj = resPLSCps$TExPosition.Data$fj,
+                      nf2keep = 3,
+                      critical.value = 2,
+                      # To be implemented later
+                      # has no effect currently
+                      alphaLevel = .05)
+
+BR.I <- resBoot4PLSC$bootRatios.i
+BR.J <- resBoot4PLSC$bootRatios.j
+
+laDim = 1
+
+# Plot the bootstrap ratios for Dimension 1
+ba001.BR1.I <- PrettyBarPlot2(BR.I[,laDim],
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fi.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle(paste0('Component ', laDim), subtitle = 'PHQ9 1')
+
+ba002.BR1.J <- PrettyBarPlot2(BR.J[,laDim],
+                              signifOnly = FALSE,
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fj.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle("", subtitle = 'PHQ9 2')
+
+# Plot the bootstrap ratios for Dimension 2
+laDim = 2
+ba003.BR2.I <- PrettyBarPlot2(BR.I[,laDim],
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fi.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle(paste0('Component ', laDim), subtitle = 'SAM Episodic 1')
+
+ba004.BR2.J <- PrettyBarPlot2(BR.J[,laDim],
+                              signifOnly = FALSE,
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCps$Plotting.Data$fj.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle("", subtitle = 'SAM Episodic 2')
+
+grid.arrange(
+    as.grob(ba001.BR1.I),as.grob(ba002.BR1.J),as.grob(ba003.BR2.I),as.grob(ba004.BR2.J),
+    ncol = 2,nrow = 2,
+    top = textGrob("Bootstrap ratios", gp = gpar(fontsize = 18, font = 3))
+  )
+```
+
+
+
+# Contributions and Bootstraps for Beck and SAM Episodic
+```{r}
+#SAM Episodic
+###### 1 ====
+Fj <- resPLSCbs$TExPosition.Data$fj
+ctrj <- resPLSCbs$TExPosition.Data$cj
+signed.ctrj <- ctrj * sign(Fj)
+# BR1
+c001.plotCtrj.1 <- PrettyBarPlot2(
+                       bootratio = round(100*signed.ctrj[,1]),
+                       signifOnly = FALSE,
+                       threshold = 100 / nrow(signed.ctrj), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fj.col),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'SAM Episodic Variables. Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrj.2 <- PrettyBarPlot2(
+  bootratio = round(100*signed.ctrj[,2]),
+  signifOnly = FALSE,
+  threshold = 100 / nrow(signed.ctrj), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fj.col),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'SAM Episodic Variables. Dim 2.', 
+  ylab = "Signed Contributions")
+
+#Beck
+###### 1 ====
+Fi <- resPLSCbs$TExPosition.Data$fi
+ctri <- resPLSCbs$TExPosition.Data$ci
+signed.ctri <- ctri * sign(Fi)
+# BR1
+c001.plotCtri.1 <- PrettyBarPlot2(
+                       bootratio = round(100*signed.ctri[,1]), 
+                       threshold = 100 / nrow(signed.ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fi.col),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'Beck Variables. Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtri.2 <- PrettyBarPlot2(
+  bootratio = round(100*signed.ctri[,2]), 
+  threshold = 100 / nrow(signed.ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fi.col),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'Beck Variables. Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtri.1),
+    as.grob(c001.plotCtrj.1),
+    as.grob(c002.plotCtri.2),
+    as.grob(c002.plotCtrj.2),
+    ncol = 2,nrow = 2,
+    top = textGrob("Contributions", gp = gpar(fontsize = 18, font = 3))
+  )
+BothCtrJ <- recordPlot() # you need this line to be able to save them in the end
+###################################################################################################
+resBoot4PLSC <- Boot4PLSC(Beck, # First Data matrix 
+                          SAMEpisodic, # Second Data matrix
+                          nIter = 1000, # How many iterations
+                      Fi = resPLSCbs$TExPosition.Data$fi,
+                      Fj = resPLSCbs$TExPosition.Data$fj,
+                      nf2keep = 3,
+                      critical.value = 2,
+                      # To be implemented later
+                      # has no effect currently
+                      alphaLevel = .05)
+
+BR.I <- resBoot4PLSC$bootRatios.i
+BR.J <- resBoot4PLSC$bootRatios.j
+
+laDim = 1
+
+# Plot the bootstrap ratios for Dimension 1
+ba001.BR1.I <- PrettyBarPlot2(BR.I[,laDim],
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fi.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle(paste0('Component ', laDim), subtitle = 'Beck 1')
+
+ba002.BR1.J <- PrettyBarPlot2(BR.J[,laDim],
+                              signifOnly = FALSE,
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fj.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle("", subtitle = 'SAM Episodic 1')
+
+# Plot the bootstrap ratios for Dimension 2
+laDim = 2
+ba003.BR2.I <- PrettyBarPlot2(BR.I[,laDim],
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fi.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle(paste0('Component ', laDim), subtitle = 'Beck 2')
+
+ba004.BR2.J <- PrettyBarPlot2(BR.J[,laDim],
+                              signifOnly = FALSE,
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCbs$Plotting.Data$fj.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle("", subtitle = 'SAM Episodic 2')
+
+grid.arrange(
+    as.grob(ba001.BR1.I),as.grob(ba002.BR1.J),as.grob(ba003.BR2.I),as.grob(ba004.BR2.J),
+    ncol = 2,nrow = 2,
+    top = textGrob("Bootstrap ratios", gp = gpar(fontsize = 18, font = 3))
+  )
+```
+
+
+# Contributions and Bootstraps for PHQ9 and SAM Episodic
+```{r}
+#SAM Episodic
+resPLSCboths$Plotting.Data$fj.col <- matrix("#305ABF", nrow = ncol(SAMEpisodic), ncol = 1)
+###### 1 ====
+Fj <- resPLSCboths$TExPosition.Data$fj
+ctrj <- resPLSCboths$TExPosition.Data$cj
+signed.ctrj <- ctrj * sign(Fj)
+# BR1
+c001.plotCtrj.1 <- PrettyBarPlot2(
+                       bootratio = round(100*signed.ctrj[,1]),
+                       signifOnly = FALSE,
+                       threshold = 100 / nrow(signed.ctrj), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(resPLSCboths$Plotting.Data$fj.col),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'SAM Episodic Variables. Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtrj.2 <- PrettyBarPlot2(
+  bootratio = round(100*signed.ctrj[,2]),
+  signifOnly = FALSE,
+  threshold = 100 / nrow(signed.ctrj), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(resPLSCboths$Plotting.Data$fj.col),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'SAM Episodic Variables. Dim 2.', 
+  ylab = "Signed Contributions")
+
+#Beck
+###### 1 ====
+Fi <- resPLSCboths$TExPosition.Data$fi
+ctri <- resPLSCboths$TExPosition.Data$ci
+signed.ctri <- ctri * sign(Fi)
+# BR1
+c001.plotCtri.1 <- PrettyBarPlot2(
+                       bootratio = round(100*signed.ctri[,1]), 
+                       threshold = 100 / nrow(signed.ctri), 
+                       ylim = NULL, 
+                       color4bar = gplots::col2hex(BothColors),
+                       color4ns = "gray75", 
+                       plotnames = TRUE, 
+                       main = 'Both Variables. Dim 1.', 
+                       ylab = "Signed Contributions")
+#_____________________________________________________________________
+###### 2 ====
+# 
+c002.plotCtri.2 <- PrettyBarPlot2(
+  bootratio = round(100*signed.ctri[,2]), 
+  threshold = 100 / nrow(signed.ctri), 
+  ylim = NULL, 
+  color4bar = gplots::col2hex(BothColors),
+  color4ns = "gray75", 
+  plotnames = TRUE, 
+  main = 'Both Variables. Dim 2.', 
+  ylab = "Signed Contributions")
+
+  grid.arrange(
+    as.grob(c001.plotCtri.1),
+    as.grob(c001.plotCtrj.1),
+    as.grob(c002.plotCtri.2),
+    as.grob(c002.plotCtrj.2),
+    ncol = 2,nrow = 2,
+    top = textGrob("Contributions", gp = gpar(fontsize = 18, font = 3))
+  )
+BothCtrJ <- recordPlot() # you need this line to be able to save them in the end
+###################################################################################################
+resBoot4PLSC <- Boot4PLSC(BothPB, # First Data matrix 
+                          SAMEpisodic, # Second Data matrix
+                          nIter = 1000, # How many iterations
+                      Fi = resPLSCboths$TExPosition.Data$fi,
+                      Fj = resPLSCboths$TExPosition.Data$fj,
+                      nf2keep = 3,
+                      critical.value = 2,
+                      # To be implemented later
+                      # has no effect currently
+                      alphaLevel = .05)
+
+BR.I <- resBoot4PLSC$bootRatios.i
+BR.J <- resBoot4PLSC$bootRatios.j
+
+laDim = 1
+
+# Plot the bootstrap ratios for Dimension 1
+ba001.BR1.I <- PrettyBarPlot2(BR.I[,laDim],
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(BothColors), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle(paste0('Component ', laDim), subtitle = 'Both 1')
+
+ba002.BR1.J <- PrettyBarPlot2(BR.J[,laDim],
+                              signifOnly = FALSE,
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCboths$Plotting.Data$fj.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle("", subtitle = 'SAM Episodic 1')
+
+# Plot the bootstrap ratios for Dimension 2
+laDim = 2
+ba003.BR2.I <- PrettyBarPlot2(BR.I[,laDim],
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(BothColors), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle(paste0('Component ', laDim), subtitle = 'Both 2')
+
+ba004.BR2.J <- PrettyBarPlot2(BR.J[,laDim],
+                              signifOnly = FALSE,
+                        threshold = 2,
+                        font.size = 3,
+                   color4bar = gplots::col2hex(resPLSCboths$Plotting.Data$fj.col), # we need hex code
+                  ylab = 'Bootstrap ratios'
+                  #ylim = c(1.2*min(BR[,laDim]), 1.2*max(BR[,laDim]))
+) + ggtitle("", subtitle = 'SAM Episodic 2')
+
+grid.arrange(
+    as.grob(ba001.BR1.I),as.grob(ba002.BR1.J),as.grob(ba003.BR2.I),as.grob(ba004.BR2.J),
+    ncol = 2,nrow = 2,
+    top = textGrob("Bootstrap ratios", gp = gpar(fontsize = 18, font = 3))
+  )
+```
